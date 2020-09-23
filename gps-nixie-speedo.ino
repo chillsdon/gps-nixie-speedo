@@ -1,7 +1,7 @@
 #include "TinyGPS++.h"
 #include <SoftwareSerial.h>
 
-static const int RXPin = 9, TXPin = 8;
+static const int RXPin = 5, TXPin = 4;
 static const int GPSBaud = 9600;
 
 int speed = 0;
@@ -11,7 +11,7 @@ TinyGPSPlus gps;
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(9600);
   ss.begin(GPSBaud);
 }
 
