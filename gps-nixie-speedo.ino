@@ -5,8 +5,9 @@ static const int RXPin = 5, TXPin = 4;
 static const int GPSBaud = 9600;
 
 int speed = 0;
-int altitude = 0;
+int lastSpeed = -1;
 char data[100];
+bool sendOutput;
 
 SoftwareSerial ss(RXPin, TXPin);
 TinyGPSPlus gps;
@@ -21,18 +22,22 @@ void loop()
 {
   smartDelay(100);  
 
+  sendOutput = false;
+
   if (gps.speed.isValid() && gps.speed.isUpdated())
   {
     speed = (int)gps.speed.mph();
+    sendOutput = true;
   }
 
-  if (gps.altitude.isValid() && gps.altitude.isUpdated())
+  if (sendOutput && speed != lastSpeed)
   {
-    altitude = (int)gps.altitude.feet();
-  }
+    sprintf(data, "%d mph", speed);
 
-  sprintf(data, "%d mph @ %d elevation (feet)", speed, altitude);
-  Serial.println(data);
+    Serial.println(data);
+
+    lastSpeed = speed;
+  }
 
   if (millis() > 5000 && gps.charsProcessed() < 10)
   {
