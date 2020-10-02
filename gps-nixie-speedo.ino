@@ -1,7 +1,7 @@
 #include "TinyGPS++.h"
 #include <SoftwareSerial.h>
 
-static const int RXPin = 5, TXPin = 4;
+static const int RXPin = 8, TXPin = 9;
 static const int GPSBaud = 9600;
 
 int speed = 0;
@@ -20,7 +20,9 @@ void setup()
 
 void loop()
 {
-  smartDelay(100);  
+  smartDelay(50);  
+
+  //Serial.println(F("Hello..."));
 
   sendOutput = false;
 
