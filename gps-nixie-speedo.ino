@@ -1,28 +1,34 @@
-//#include "TinyGPS++.h"
-//#include <SoftwareSerial.h>
+#include "TinyGPS++.h"
+#include <SoftwareSerial.h>
 
-static const int RXPin = 8, TXPin = 9;
 static const int GPSBaud = 9600;
 
+static const int _greenLEDPin = 0;
+static const int _redLEDPin = 1;
+
+static const int _dataPin = 2;
 static const int _latchPin = 3;
-static const int _clockPin = 2;
-static const int _dataPin = 4;
+static const int _clockPin = 4;
+
+static const int _rxPin = 8; 
+static const int _txPin = 9;
 
 int speedValue = 0;
 int lastSpeed = -1;
-char data[100];
-bool sendOutput;
-byte speedBytes[2];
 
-//SoftwareSerial ss(RXPin, TXPin);
-//TinyGPSPlus gps;
+bool greenOn = true;
+
+SoftwareSerial ss(_rxPin, _txPin);
+TinyGPSPlus gps;
 
 void setup()
 {
   Serial.begin(9600);
-  //ss.begin(GPSBaud);
+  ss.begin(GPSBaud);
 
   // Set up the outputs for the shift register
+  pinMode(_greenLEDPin, OUTPUT);
+  pinMode(_redLEDPin, OUTPUT);
   pinMode(_latchPin, OUTPUT);
   pinMode(_clockPin, OUTPUT);
   pinMode(_dataPin, OUTPUT);
@@ -30,15 +36,39 @@ void setup()
 
 void loop()
 {
+  if (greenOn)
+  {
+    digitalWrite(_greenLEDPin, HIGH);
+    digitalWrite(_redLEDPin, LOW);  
+  }
+  else
+  {
+    digitalWrite(_greenLEDPin, LOW);
+    digitalWrite(_redLEDPin, HIGH);
+  }
+  
+  greenOn = !greenOn;
+  
   //byte a = speedValue;
   //byte b = speedValue;
   //byte c = speedValue;
   //byte d = speedValue;
 
-  byte enable = 0;
+  //byte enable = 3;
   byte hundreds = speedValue / 100;
   byte tens = (speedValue - (hundreds * 100)) / 10;
   byte units = speedValue - (hundreds * 100) - (tens * 10);
+
+  byte enable = 0;
+
+  if (hundreds > 0)
+  {
+    enable = 3;
+  }
+  else if (tens > 0)
+  {
+    enable = 2;
+  }
 
   //byte first = (a << 4) | b;
   //byte last = (c << 4) | d;
