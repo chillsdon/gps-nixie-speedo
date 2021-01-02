@@ -23,11 +23,16 @@ int _lastSpeedValue = -1;
 speedUnit _speedUnit = milesPerHour;
 speedUnit _lastSpeedUnit = kilometersPerHour;
 
-int _buttonState;             // the current reading from the input pin
-int _lastButtonState = LOW;   // the previous reading from the input pin
+const int DEBOUNCE_DELAY = 150;   // the debounce time; increase if the output flickers
 
+// Variables will change:
+int _lastSteadyState = LOW;       // the previous steady state from the input pin
+int _lastFlickerableState = LOW;  // the previous flickerable state from the input pin
+int _currentState;                // the current reading from the input pin
+
+// the following variables are unsigned longs because the time, measured in
+// milliseconds, will quickly become a bigger number than can be stored in an int.
 unsigned long _lastDebounceTime = 0;  // the last time the output pin was toggled
-unsigned long _debounceDelay = 50;    // the debounce time; increase if the output flickers
 
 SoftwareSerial ss(_rxPin, _txPin);
 TinyGPSPlus gps;
@@ -48,40 +53,49 @@ void setup()
 
 void loop()
 {
-  int reading = digitalRead(_btnPin);
+  // read the state of the switch/button:
+  _currentState = digitalRead(_btnPin);
 
-  Serial.println(reading);
-  
-  if (reading != _lastButtonState)
-  {
+  // check to see if you just pressed the button
+  // (i.e. the input went from LOW to HIGH), and you've waited long enough
+  // since the last press to ignore any noise:
+
+  // If the switch/button changed, due to noise or pressing:
+  if (_currentState != _lastFlickerableState) {
+    // reset the debouncing timer
     _lastDebounceTime = millis();
+    // save the the last flickerable state
+    _lastFlickerableState = _currentState;
   }
 
-  if ((millis() - _lastDebounceTime) > _debounceDelay)
-  {
+  if ((millis() - _lastDebounceTime) > DEBOUNCE_DELAY) {
     // whatever the reading is at, it's been there for longer than the debounce
     // delay, so take it as the actual current state:
 
     // if the button state has changed:
-    if (reading != _buttonState)
+    if(_lastSteadyState == HIGH && _currentState == LOW)
     {
-      _buttonState = reading;
+      Serial.println("The button is pressed");
+      
+    }
+    else if (_lastSteadyState == LOW && _currentState == HIGH)
+    {
+      Serial.println("The button is released");
 
-      // only toggle the LED if the new button state is HIGH
-      if (_buttonState == HIGH)
+      if (_speedUnit == milesPerHour)
       {
-        if (_speedUnit == milesPerHour)
-        {
-          Serial.println("Setting kph");
-          _speedUnit = kilometersPerHour;
-        }
-        else
-        {
-          Serial.println("Setting mph");
-          _speedUnit = milesPerHour;
-        }
+        Serial.println("Setting kph");
+        _speedUnit = kilometersPerHour;
+      }
+      else
+      {
+        Serial.println("Setting mph");
+        _speedUnit = milesPerHour;
       }
     }
+
+    // save the the last steady state
+    _lastSteadyState = _currentState;
   }
 
   if (_speedUnit != _lastSpeedUnit)
