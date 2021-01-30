@@ -1,5 +1,20 @@
-#include "TinyGPS++.h"
+#include <Adafruit_GPS.h>
 #include <SoftwareSerial.h>
+
+#define PMTK_SET_NMEA_UPDATE_1HZ  "$PMTK220,1000*1F"
+#define PMTK_SET_NMEA_UPDATE_5HZ  "$PMTK220,200*2C"
+#define PMTK_SET_NMEA_UPDATE_10HZ "$PMTK220,100*2F"
+
+// turn on only the second sentence (GPRMC)
+#define PMTK_SET_NMEA_OUTPUT_RMCONLY "$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29"
+// turn on GPRMC and GGA
+#define PMTK_SET_NMEA_OUTPUT_RMCGGA "$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28"
+// turn on ALL THE DATA
+#define PMTK_SET_NMEA_OUTPUT_ALLDATA "$PMTK314,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0*28"
+// turn off output
+#define PMTK_SET_NMEA_OUTPUT_OFF "$PMTK314,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28"
+
+#define PMTK_Q_RELEASE "$PMTK605*31"
 
 enum speedUnit {
   milesPerHour,
@@ -7,6 +22,9 @@ enum speedUnit {
 };
 
 static const int GPSBaud = 9600;
+
+static const float mphMultiplier = 1.15078;
+static const float kphMultiplier = 1.852;
 
 static const int _mphLEDPin = 0;
 static const int _kphLEDPin = 1;
@@ -17,31 +35,20 @@ static const int _rxPin = 8;
 static const int _txPin = 9;
 static const int _btnPin = 10;
 
+float _lastKnots = 0.0;
 int _speedValue = 0;
 int _lastSpeedValue = -1;
+bool _unitsChanged = true;
+bool _serialEnable = false;
+bool _displayCounter = false;
+int _counter = 0;
+speedUnit _speedUnit;
 
-speedUnit _speedUnit = milesPerHour;
-speedUnit _lastSpeedUnit = kilometersPerHour;
-
-const int DEBOUNCE_DELAY = 150;   // the debounce time; increase if the output flickers
-
-// Variables will change:
-int _lastSteadyState = LOW;       // the previous steady state from the input pin
-int _lastFlickerableState = LOW;  // the previous flickerable state from the input pin
-int _currentState;                // the current reading from the input pin
-
-// the following variables are unsigned longs because the time, measured in
-// milliseconds, will quickly become a bigger number than can be stored in an int.
-unsigned long _lastDebounceTime = 0;  // the last time the output pin was toggled
-
-SoftwareSerial ss(_rxPin, _txPin);
-TinyGPSPlus gps;
+SoftwareSerial ss(_txPin, _rxPin);
+Adafruit_GPS GPS(&ss);
 
 void setup()
 {
-  Serial.begin(9600);
-  ss.begin(GPSBaud);
-
   // Set up the outputs for the shift register
   pinMode(_mphLEDPin, OUTPUT);
   pinMode(_kphLEDPin, OUTPUT);
@@ -49,56 +56,55 @@ void setup()
   pinMode(_clockPin, OUTPUT);
   pinMode(_dataPin, OUTPUT);
   pinMode(_btnPin, INPUT);
+
+  if (_serialEnable)
+  {
+    Serial.begin(115200);
+    delay(2000);
+  }
+  
+  GPS.begin(GPSBaud);
+
+  // uncomment this line to turn on RMC (recommended minimum) and GGA (fix data) including altitude
+  //GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
+  // uncomment this line to turn on only the "minimum recommended" data for high update rates!
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCONLY);
+  // uncomment this line to turn on all the available data - for 9600 baud you'll want 1 Hz rate
+  //GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_ALLDATA);
+
+  // Set the update rate
+  // 1 Hz update rate
+  //GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
+  // 5 Hz update rate- for 9600 baud you'll have to set the output to RMC or RMCGGA only (see above)
+  //GPS.sendCommand(PMTK_SET_NMEA_UPDATE_5HZ);
+  // 10 Hz update rate - for 9600 baud you'll have to set the output to RMC only (see above)
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_10HZ);
 }
 
 void loop()
 {
-  // read the state of the switch/button:
-  _currentState = digitalRead(_btnPin);
-
-  // check to see if you just pressed the button
-  // (i.e. the input went from LOW to HIGH), and you've waited long enough
-  // since the last press to ignore any noise:
-
-  // If the switch/button changed, due to noise or pressing:
-  if (_currentState != _lastFlickerableState) {
-    // reset the debouncing timer
-    _lastDebounceTime = millis();
-    // save the the last flickerable state
-    _lastFlickerableState = _currentState;
-  }
-
-  if ((millis() - _lastDebounceTime) > DEBOUNCE_DELAY) {
-    // whatever the reading is at, it's been there for longer than the debounce
-    // delay, so take it as the actual current state:
-
-    // if the button state has changed:
-    if(_lastSteadyState == HIGH && _currentState == LOW)
+  if (digitalRead(_btnPin) == LOW)
+  {
+    if (_speedUnit != milesPerHour)
     {
-      Serial.println("The button is pressed");
-      
-    }
-    else if (_lastSteadyState == LOW && _currentState == HIGH)
-    {
-      Serial.println("The button is released");
-
-      if (_speedUnit == milesPerHour)
-      {
-        Serial.println("Setting kph");
-        _speedUnit = kilometersPerHour;
-      }
-      else
-      {
-        Serial.println("Setting mph");
-        _speedUnit = milesPerHour;
-      }
+      _speedUnit = milesPerHour;
+      _unitsChanged = true;
     }
 
-    // save the the last steady state
-    _lastSteadyState = _currentState;
+    //_displayCounter = false;
+  }
+  else
+  {
+    if (_speedUnit != kilometersPerHour)
+    {
+      _speedUnit = kilometersPerHour;
+      _unitsChanged = true;
+    }
+
+    //_displayCounter = true;
   }
 
-  if (_speedUnit != _lastSpeedUnit)
+  if (_unitsChanged)
   {
     if (_speedUnit == milesPerHour)
     {
@@ -111,21 +117,53 @@ void loop()
       digitalWrite(_kphLEDPin, HIGH);
     }
 
-    _lastSpeedUnit = _speedUnit;
+    _unitsChanged = false;
   }
 
   //Init
   _speedValue = 0;
 
-  //Get speed
-  smartDelay(50);
-
-  if (gps.speed.isValid() && gps.speed.isUpdated())
+  if (_displayCounter)
   {
-    if (_speedUnit == milesPerHour)
-      _speedValue = (int)gps.speed.mph();
-    else
-      _speedValue = (int)gps.speed.kmph();
+    _speedValue = _counter;
+
+    _counter += 1;
+
+    if (_counter > 999)
+      _counter = 0;
+
+    delay(250);
+  }
+  else
+  {
+    char c = GPS.read();
+
+    if (GPS.newNMEAreceived())
+    {
+      if (!GPS.parse(GPS.lastNMEA()))
+      {
+        return;
+      }
+    }
+
+    float knots = GPS.speed;
+    
+    bool isValid = knots > 0.0;
+    bool isUpdated = knots != _lastKnots;
+
+    if (isValid && isUpdated)
+    {
+      if (_speedUnit == milesPerHour)
+      {
+        _speedValue = (int)(knots * mphMultiplier);
+      }
+      else
+      {
+        _speedValue = (int)(knots * kphMultiplier);
+      }
+
+      _lastKnots = knots;
+    }
   }
 
   if (_speedValue != _lastSpeedValue)
@@ -155,17 +193,4 @@ void loop()
 
     _lastSpeedValue = _speedValue;
   }
-}
-
-// This custom version of delay() ensures that the gps object
-// is being "fed".
-static void smartDelay(unsigned long ms)
-{
-  unsigned long start = millis();
-  
-  do 
-  {
-    while (ss.available())
-      gps.encode(ss.read());
-  } while (millis() - start < ms);
 }
