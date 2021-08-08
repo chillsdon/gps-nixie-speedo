@@ -149,7 +149,7 @@ void loop()
     float knots = GPS.speed;
     
     bool isValid = knots > 0.0;
-    bool isUpdated = knots != _lastKnots;
+    bool isUpdated = true; //knots != _lastKnots;
 
     if (isValid && isUpdated)
     {
